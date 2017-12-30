@@ -1,0 +1,242 @@
+#!/bin/bash
+
+#### Global Variables ####
+DEBUG=0
+VERBOSE=""
+HANDBRAKE="$(which HandBrakeCLI)"
+if [ ! -f "$HANDBRAKE" ]; then
+	echo "Missing HandBrakeCLI. Exiting."
+	exit 1
+fi
+"$HANDBRAKE" --preset-list 2> /dev/null | grep "+" | sed -e "s/^\ *+ //g" | cut -d: -f1 >> FORMAT_LIST.txt
+while read f
+do
+	FORMATS=( "${FORMATS[@]}" "$f" )
+done < FORMAT_LIST.txt
+rm -f FORMAT_LIST.txt
+TARGET_DIR=""
+TARGET_FORMAT=""
+TARGET_FILES=( ) #( "avi" "mkv" "wmv" "m4v" ) 
+TIDY=0
+#### Functions ####
+usage()
+{
+	echo ""
+	echo "	Usage for $0:"
+	echo "	Optional Flags:"
+	echo "		-h: Display this dialog"
+	echo "		-d: Enable Debugging."
+	echo "		-T: Tidy flag. Toggle this to remove old movie file. Default is to leave old files in place, but put them in .TEMP folder."
+	echo "	Required Flags:"
+	echo "		-D target_dir: Set the target directory (absolute path)."
+	echo "		-C target_files: Add a file extension to search for to convert."
+	echo "		-F target_format_#: Select the format to encode in."
+	echo "			Available Formats: "
+	count=0
+	for f in "${FORMATS[@]}"
+	do
+		echo "				[$count] $f"
+		((count++))
+	done
+	echo ""
+	echo ""
+}
+print()
+{
+	local OPTIND
+	if [ "$(uname -s)" == "Darwin" ];then
+		Black='\033[0;30m'        # Black
+		Red='\033[0;31m'          # Red
+		Green='\033[0;32m'        # Green
+		Yellow='\033[0;33m'       # Yellow
+		Blue='\033[0;34m'         # Blue
+		Purple='\033[0;35m'       # Purple
+		Cyan='\033[0;36m'         # Cyan
+		White='\033[0;37m'        # White
+		NC='\033[m'               # Color Reset
+	else 
+		Black='\e[0;30m'        # Black
+		Red='\e[0;31m'          # Red
+		Green='\e[0;32m'        # Green
+		Yellow='\e[0;33m'       # Yellow
+		Blue='\e[0;34m'         # Blue
+		Purple='\e[0;35m'       # Purple
+		Cyan='\e[0;36m'         # Cyan
+		White='\e[0;37m'        # White
+		NC="\e[m"               # Color Reset
+	fi
+	colors=( "$Red" "$Green" "$Gellow" "$Blue" "$Purple" "$Cyan" )
+	local DEBUG=0
+	if which printf >&/dev/null; then	
+		PRINTF_E=0
+	else
+		PRINTF_E=1
+	fi
+	FGND=""
+	NL=1
+	PNL=0
+	STRING=" "
+	while getopts "f:npKRGYBPCWS:" opt
+	do
+		case "$opt" in
+			"f")					# Set foreground/text color.
+				case "$OPTARG" in
+					"black") FGND="$Black";;
+					"red") FGND="$Red";;
+					"green") FGND="$Green";;
+					"yellow") FGND="$Yellow";;
+					"blue") FGND="$Blue";;
+					"purple") FGND="$Purple";;
+					"cyan") FGND="$Cyan";;
+					"white") FGND="$White";;
+					"*") [ $DEBUG -eq 1 ] && echo "Unrecognized Arguement: $OPTARG" ;;
+				esac
+				;;
+			"n") NL=0 ;;	 			# Print with newline.
+			"p") ((PNL++)) ;; 			# Prepend with newline.
+			"K") FGND="$Black";;
+			"R") FGND="$Red";;
+			"G") FGND="$Green";;
+			"Y") FGND="$Yellow";;
+			"B") FGND="$Blue";;
+			"P") FGND="$Purple";;
+			"C") FGND="$Cyan";;
+			"W") FGND="$White";;
+			"D") local DEBUG=1 ;;
+			"S") STRING="$OPTARG" ;;
+			"*") [ $DEBUG -eq 1 ] && echo "Unknown Arguement: $opt" ;;
+		esac
+	done
+	if [[ "$STRING" == " " ]];then
+		shift "$((OPTIND - 1))"
+		STRING="$@" 
+	fi
+	if [ $DEBUG -eq 1 ]; then
+		echo "FGND: $FGND"
+		echo "NL: $NL"
+		echo "PNL: $PNL"
+		echo "STRING: $STRING"
+	fi
+	while [ $PNL -ne 0 ] 
+	do
+		if [ $PRINTF_E -eq 0 ];then
+			printf "\n"
+		else
+			echo ""
+		fi
+		((PNL--))
+	done
+	[ ! -z $FGND ] && STRING="$FGND$STRING$NC"
+	if [ $PRINTF_E -eq 0 ];then
+		printf -- "$STRING"
+		[ $NL -eq 1 ] && printf "\n"
+	else
+		echo "$STRING"
+		[ $NL -eq 1 ] && echo ""
+	fi
+}
+is_root()
+{
+	if [ "$(id -u)" -ne "0" ]; then
+		print -R "Must run as root. Exiting."
+		usage
+		exit 1
+	fi
+}
+
+#### Main Run ####
+if [ $# -lt 1 ]; then
+	print -R "Missing arguments"
+	usage
+	exit 1
+else
+	while getopts "hdD:F:C:T" opt
+	do
+		case "$opt" in
+			"h")
+				usage
+				;;
+			"D")
+				TARGET_DIR="$OPTARG"
+				;;
+			"F")
+				TARGET_FORMAT="${FORMATS[$OPTARG]}"
+				;;
+			"C")
+				TARGET_FILES=( ${TARGET_FILES[@]} "$OPTARG" )
+				;;
+			"T")
+				TIDY=1
+				;;
+			"d")
+				DEBUG=1
+				VERBOSE="v"
+				;;
+			"*")
+				print -R "Unrecognized Argument: $opt"
+				usage
+				exit 1
+				;;
+		esac
+	done
+fi
+if [ $DEBUG -eq 1 ]; then
+	print -B "DEBUG: $DEBUG"
+	print -B "HANDBRAKE: $HANDBRAKE"
+	print -B "TARGET_DIR: $TARGET_DIR"
+	print -B "TARGET_FORMAT: $TARGET_FORMAT"
+	print -n -B "TARGET_FILES: "
+	for f in "${TARGET_FILES[@]}"
+	do
+		print -B -n "$f "
+	done
+	echo ""
+fi
+if [[ "$TARGET_DIR" == "" ]] || [ ! -d "$TARGET_DIR" ]; then
+	print -R "TARGET_DIR: $TARGET_DIR does not exist!"
+	exit 1
+fi
+if [[ "$TARGET_FORMAT" == "" ]]; then
+	print -R "TARGET_FORMAT is not set."
+	exit 1
+fi
+if [ "${#TARGET_FILES[@]}" -lt 1 ]; then
+	print -R "TARGET_FILES has no entries."
+	exit 1
+fi
+cd "$TARGET_DIR"
+ls | while read SUB_DIR
+do
+	if [ -d "$SUB_DIR" ];then
+		[ $DEBUG -eq 1 ] && print -B "Entering $SUB_DIR"
+		cd "$SUB_DIR"
+		mkdir .TEMP
+		for T_FILE in "${TARGET_FILES[@]}"
+		do
+			[ $DEBUG -eq 1 ] && print -B "Searching for files with extension: $T_FILE"
+			ls | grep -i *".$T_FILE" | while read F_FILE
+			do
+				if [ -f "$F_FILE" ];then
+					[ $DEBUG -eq 1 ] && print -B "Attempting to Convert $F_FILE"
+					"$HANDBRAKE" -i "$F_FILE" -o .TEMP/"${F_FILE%\.*}".mp4 --preset="$TARGET_FORMAT"
+					if [ -f ".TEMP/${F_FILE%\.*}.mp4" ];then
+						print -G "Conversion Successful. Moving into place."
+						mv -f"$VERBOSE" .TEMP/"${F_FILE%\.*}".mp4 .
+						mv -f"$VERBOSE" "$F_FILE" .TEMP/
+					else
+						print -R "Conversion failed."
+					fi
+				fi
+			done
+		done
+		if [ $TIDY -eq 1 ]; then
+			print -Y "Tidy flag detected. Cleaning up $SUB_DIR/.TEMP."
+			rm -rf"$VERBOSE" .TEMP
+		else
+			[ $DEBUG -eq 1 ] && print -B "Files remaining in $SUB_DIR/.TEMP:" && ls -lha .TEMP
+		fi
+		[ $DEBUG -eq 1 ] && print -B "Returning to $TARGET_DIR"
+		cd "$TARGET_DIR"
+	fi
+done
+exit 0
