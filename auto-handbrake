@@ -16,7 +16,8 @@ done < FORMAT_LIST.txt
 rm -f FORMAT_LIST.txt
 TARGET_DIR=""
 TARGET_FORMAT=""
-TARGET_FILES=( ) #( "avi" "mkv" "wmv" "m4v" ) 
+TARGET_FILES=( )
+SCRATCH_DIR=""
 TIDY=0
 #### Functions ####
 usage()
@@ -27,6 +28,7 @@ usage()
 	echo "		-h: Display this dialog"
 	echo "		-d: Enable Debugging."
 	echo "		-T: Tidy flag. Toggle this to remove old movie file. Default is to leave old files in place, but put them in .TEMP folder."
+	echo "		-S scratch_dir: Scratch directory for conversions and moving the old files to. Default is to create .TEMP folder in the same directory as the file."
 	echo "	Required Flags:"
 	echo "		-D target_dir: Set the target directory (absolute path)."
 	echo "		-C target_files: Add a file extension to search for to convert."
@@ -150,7 +152,7 @@ if [ $# -lt 1 ]; then
 	usage
 	exit 1
 else
-	while getopts "hdD:F:C:T" opt
+	while getopts "hdD:F:C:TS:" opt
 	do
 		case "$opt" in
 			"h")
@@ -172,6 +174,9 @@ else
 				DEBUG=1
 				VERBOSE="v"
 				;;
+			"S")
+				SCRATCH_DIR="$OPTARG"
+				;;
 			"*")
 				print -R "Unrecognized Argument: $opt"
 				usage
@@ -192,6 +197,11 @@ if [ $DEBUG -eq 1 ]; then
 	done
 	echo ""
 fi
+if [[ "$SCRATCH_DIR" == "" ]] || [ ! -d "$SCRATCH_DIR" ]; then
+	print -Y "SCRATCH_DIR: $SCRATCH_DIR does not exist."
+	print -Y "Setting SCRATCH_DIR to .TEMP"
+	SCRATCH_DIR=".TEMP"
+fi
 if [[ "$TARGET_DIR" == "" ]] || [ ! -d "$TARGET_DIR" ]; then
 	print -R "TARGET_DIR: $TARGET_DIR does not exist!"
 	exit 1
@@ -210,7 +220,9 @@ do
 	if [ -d "$SUB_DIR" ];then
 		[ $DEBUG -eq 1 ] && print -B "Entering $SUB_DIR"
 		cd "$SUB_DIR"
-		mkdir .TEMP
+		if [ ! -d "$SCRATCH_DIR" ];then
+			mkdir -p"$VERBOSE" "$SCRATCH_DIR"
+		fi
 		for T_FILE in "${TARGET_FILES[@]}"
 		do
 			[ $DEBUG -eq 1 ] && print -B "Searching for files with extension: $T_FILE"
@@ -218,11 +230,11 @@ do
 			do
 				if [ -f "$F_FILE" ];then
 					[ $DEBUG -eq 1 ] && print -B "Attempting to Convert $F_FILE"
-					"$HANDBRAKE" -i "$F_FILE" -o .TEMP/"${F_FILE%\.*}".mp4 --preset="$TARGET_FORMAT"
-					if [ -f ".TEMP/${F_FILE%\.*}.mp4" ];then
+					"$HANDBRAKE" -i "$F_FILE" -o "$SCRATCH_DIR"/"${F_FILE%\.*}".mp4 --preset="$TARGET_FORMAT"
+					if [ -f "$SCRATCH_DIR/${F_FILE%\.*}.mp4" ];then
 						print -G "Conversion Successful. Moving into place."
-						mv -f"$VERBOSE" .TEMP/"${F_FILE%\.*}".mp4 .
-						mv -f"$VERBOSE" "$F_FILE" .TEMP/
+						mv -f"$VERBOSE" "$SCRATCH_DIR"/"${F_FILE%\.*}".mp4 .
+						mv -f"$VERBOSE" "$F_FILE" "$SCRATCH_DIR"/
 					else
 						print -R "Conversion failed."
 					fi
@@ -230,10 +242,10 @@ do
 			done
 		done
 		if [ $TIDY -eq 1 ]; then
-			print -Y "Tidy flag detected. Cleaning up $SUB_DIR/.TEMP."
-			rm -rf"$VERBOSE" .TEMP
+			print -Y "Tidy flag detected. Cleaning up $SCRATCH_DIR"
+			rm -rf"$VERBOSE" "$SCRATCH_DIR"
 		else
-			[ $DEBUG -eq 1 ] && print -B "Files remaining in $SUB_DIR/.TEMP:" && ls -lha .TEMP
+			[ $DEBUG -eq 1 ] && print -B "Files remaining in $SCRATCH_DIR:" && ls -lha "$SCRATCH_DIR" 
 		fi
 		[ $DEBUG -eq 1 ] && print -B "Returning to $TARGET_DIR"
 		cd "$TARGET_DIR"
