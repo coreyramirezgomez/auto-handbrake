@@ -2,7 +2,6 @@
 
 #### Global Variables ####
 DEBUG=0
-VERBOSE=""
 HANDBRAKE="$(which HandBrakeCLI)"
 if [ ! -f "$HANDBRAKE" ]; then
 	echo "Missing HandBrakeCLI. Exiting."
@@ -229,14 +228,18 @@ do
 			ls | grep -i *".$T_FILE" | while read F_FILE
 			do
 				if [ -f "$F_FILE" ];then
-					[ $DEBUG -eq 1 ] && print -B "Attempting to Convert $F_FILE"
-					"$HANDBRAKE" -i "$F_FILE" -o "$SCRATCH_DIR"/"${F_FILE%\.*}".mp4 --preset="$TARGET_FORMAT"
+					print -B "Attempting to Convert $F_FILE"
+					if [ $DEBUG -eq 1 ]; then
+						"$HANDBRAKE" -i "$F_FILE" -o "$SCRATCH_DIR"/"${F_FILE%\.*}".mp4 --preset="$TARGET_FORMAT"
+					else
+						"$HANDBRAKE" -i "$F_FILE" -o "$SCRATCH_DIR"/"${F_FILE%\.*}".mp4 --preset="$TARGET_FORMAT" 2> /dev/null  
+					fi
 					if [ -f "$SCRATCH_DIR/${F_FILE%\.*}.mp4" ];then
-						print -G "Conversion Successful. Moving into place."
+						print -G "Conversion Successful for ${F_FILE%\.*}.mp4. Moving into place."
 						mv -f"$VERBOSE" "$SCRATCH_DIR"/"${F_FILE%\.*}".mp4 .
 						mv -f"$VERBOSE" "$F_FILE" "$SCRATCH_DIR"/
 					else
-						print -R "Conversion failed."
+						print -R "Conversion failed for ${F_FILE%\.*}.mp4."
 					fi
 				fi
 			done
